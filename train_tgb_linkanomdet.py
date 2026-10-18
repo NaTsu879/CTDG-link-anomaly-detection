@@ -4,6 +4,7 @@ NOTE: The task is Transductive Dynamic Link Anomaly Detection.
 """
 
 import copy
+import functools
 import logging
 import timeit
 import time
@@ -29,6 +30,10 @@ from models.TCL import TCL
 from models.GraphMixer import GraphMixer
 from models.DyGFormer import DyGFormer
 from models.modules import ContextualLinkPredictor
+from models.uncertainty import (
+    UncertaintyLinkPredictor,
+    eval_linkanomdet_TGB_with_uncertainty,
+)
 from utils.utils import (
     set_random_seed,
     convert_to_gpu,
@@ -266,13 +271,26 @@ def anomaly_detection_single(args: SimpleNamespace):
         )
     else:
         raise ValueError(f"Wrong value for model_name {args.model_name}!")
-    link_predictor = ContextualLinkPredictor(
-        input_dim_node1=node_raw_features.embedding_dim,
-        input_dim_node2=node_raw_features.embedding_dim,
-        input_dim_context=edge_raw_features.embedding_dim,
-        hidden_dim=node_raw_features.embedding_dim,
-        output_dim=1,
-    )
+    # [UNCERTAINTY] Without the `uncertainty` section in the config, the original prediction head is used.
+    uncertainty_config = getattr(args, "uncertainty", None)
+    if uncertainty_config is None:
+        link_predictor = ContextualLinkPredictor(
+            input_dim_node1=node_raw_features.embedding_dim,
+            input_dim_node2=node_raw_features.embedding_dim,
+            input_dim_context=edge_raw_features.embedding_dim,
+            hidden_dim=node_raw_features.embedding_dim,
+            output_dim=1,
+        )
+    else:
+        link_predictor = UncertaintyLinkPredictor(
+            input_dim_node1=node_raw_features.embedding_dim,
+            input_dim_node2=node_raw_features.embedding_dim,
+            input_dim_context=edge_raw_features.embedding_dim,
+            hidden_dim=node_raw_features.embedding_dim,
+            output_dim=1,
+            seed=args.seed + args.run_id,
+            **uncertainty_config,
+        )
     model = nn.Sequential(dynamic_backbone, link_predictor)
     logger.info(f"model -> {model}")
     logger.info(
@@ -307,6 +325,17 @@ def anomaly_detection_single(args: SimpleNamespace):
     )
 
     loss_func = nn.BCEWithLogitsLoss()
+
+    # [UNCERTAINTY] The uncertainty-aware evaluation fits the weights of uncertainty components on validation data only.
+    if uncertainty_config is None:
+        val_eval_func = test_eval_func = eval_linkanomdet_TGB
+    else:
+        val_eval_func = functools.partial(
+            eval_linkanomdet_TGB_with_uncertainty, fit_uncertainty_weights=True
+        )
+        test_eval_func = functools.partial(
+            eval_linkanomdet_TGB_with_uncertainty, fit_uncertainty_weights=False
+        )
 
     # ================================================
     # ============== train & validation ==============
@@ -577,7 +606,7 @@ def anomaly_detection_single(args: SimpleNamespace):
 
             # === validation
             # After one complete epoch, evaluate the model on the validation set.
-            val_metrics = eval_linkanomdet_TGB(
+            val_metrics = val_eval_func(
                 model_name=args.model_name,
                 model=model,
                 neighbor_sampler=full_neighbor_sampler,
@@ -644,7 +673,7 @@ def anomaly_detection_single(args: SimpleNamespace):
         # ============== Final Test ==============
         # ========================================
         start_test = timeit.default_timer()
-        test_metrics = eval_linkanomdet_TGB(
+        test_metrics = test_eval_func(
             model_name=args.model_name,
             model=model,
             neighbor_sampler=full_neighbor_sampler,
@@ -714,6 +743,17 @@ def main():
 
     # Run on a GPU if available.
     common_args["device"] = f"cuda" if torch.cuda.is_available() else "cpu"
+
+    # [UNCERTAINTY] Optional uncertainty module. If the config has no `uncertainty` section (or `enabled: False`),
+    # the original pipeline from the paper runs unchanged.
+    uncertainty_config = (
+        OmegaConf.to_container(config.uncertainty, resolve=True)
+        if config.get("uncertainty") is not None
+        else None
+    )
+    if uncertainty_config is not None and not uncertainty_config.pop("enabled", True):
+        uncertainty_config = None
+    common_args["uncertainty"] = uncertainty_config
 
     # Set up MLflow.
     mlflow.set_tracking_uri(f'file://{common_args["mlflow_tracking_uri"]}')

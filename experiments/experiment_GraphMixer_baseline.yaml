@@ -1,0 +1,42 @@
+# GraphMixer exactly as in the paper (no uncertainty module).
+# Identical to experiment_GraphMixer_uncertainty.yaml except for the missing `uncertainty` section.
+general:
+  show_progress_bar: False
+
+  experiment_name: "GraphMixer-Baseline"
+  num_runs: 3
+  num_anom_sets: 3
+
+  mlflow_tracking_uri: "<OUTPUT_DIR>/EXPERIMENTS/mlflow"
+  output_root: "<OUTPUT_DIR>/EXPERIMENTS"
+
+
+data:
+  dataset_root: "<OUTPUT_DIR>"
+  dataset_name: ["wikipedia", "uci"]
+  anom_type: ["temporal-structural-contextual", "structural-contextual", "temporal"]
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+
+models:
+  GraphMixer:
+    node_feat_dim: 60
+    edge_feat_dim: 60
+    num_neighbors: 20
+    sample_neighbor_strategy: "recent"
+    time_feat_dim: 60
+    time_gap: 2000
+    num_layers: 2
+    dropout: 0.4
+
+
+training:
+  learning_rate: [1e-4]
+  num_epochs: 50
+  batch_size: 200
+  optimizer: "Adam"
+  weight_decay: 0.0
+  patience: 20
+  test_interval_epochs: 10
+  seed: 2023

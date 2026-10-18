@@ -115,6 +115,24 @@ python train_tgb_linkanomdet_without_improved_training.py --config_path=experime
 ```
 
 
+## Uncertainty Module (Extension)
+`models/uncertainty.py` adds an optional uncertainty-aware prediction head, `UncertaintyLinkPredictor`, to `train_tgb_linkanomdet.py`. It is a drop-in replacement for `ContextualLinkPredictor` that models:
+- aleatoric uncertainty, with a heteroscedastic logit head trained by MC-integrating the likelihood;
+- epistemic uncertainty, with MC dropout in the head;
+- support uncertainty `W / (W + n)`, where `n` is the number of earlier observations of the node pair.
+
+Edges are scored with the lower confidence bound `p(e) - Σ λ_i u_i(e)`. The weights `λ_i ≥ 0` are selected on the validation set and saved with the checkpoint.
+
+The module is enabled only by an `uncertainty:` section in the config. Without that section, or with `enabled: False`, the original pipeline runs unchanged:
+```
+python download_datasets.py --dataset_root <OUTPUT_DIR> --datasets wikipedia uci --anom_types structural-contextual temporal temporal-structural-contextual --num_anom_sets 3
+export PYTHONPATH=<PATH-TO>/TGB-link-anomaly-detection
+python train_tgb_linkanomdet.py --config_path=experiments/experiment_GraphMixer_baseline.yaml
+python train_tgb_linkanomdet.py --config_path=experiments/experiment_GraphMixer_uncertainty.yaml
+```
+`download_datasets.py` clones TGB-link-anomaly-detection, downloads the datasets from Zenodo without the interactive prompt, and generates the anomalies. `uncertainty_kaggle.ipynb` runs the whole comparison on Kaggle.
+
+
 ## Acknowledgments
 The code is adapted from [TGB_Baselines repository](https://github.com/fpour/TGB_Baselines). If this code repository is useful for your research, please consider citing the original authors from [TGB](https://arxiv.org/pdf/2307.01026.pdf) paper as well.
 

@@ -1,0 +1,62 @@
+# GraphMixer with the uncertainty module (models/uncertainty.py).
+# Identical to experiment_GraphMixer_baseline.yaml except for the `uncertainty` section;
+# deleting that section (or setting `enabled: False`) reproduces the baseline.
+general:
+  show_progress_bar: False
+
+  experiment_name: "GraphMixer-Uncertainty"
+  num_runs: 3
+  num_anom_sets: 3
+
+  mlflow_tracking_uri: "<OUTPUT_DIR>/EXPERIMENTS/mlflow"
+  output_root: "<OUTPUT_DIR>/EXPERIMENTS"
+
+
+data:
+  dataset_root: "<OUTPUT_DIR>"
+  dataset_name: ["wikipedia", "uci"]
+  anom_type: ["temporal-structural-contextual", "structural-contextual", "temporal"]
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+
+models:
+  GraphMixer:
+    node_feat_dim: 60
+    edge_feat_dim: 60
+    num_neighbors: 20
+    sample_neighbor_strategy: "recent"
+    time_feat_dim: 60
+    time_gap: 2000
+    num_layers: 2
+    dropout: 0.4
+
+
+training:
+  learning_rate: [1e-4]
+  num_epochs: 50
+  batch_size: 200
+  optimizer: "Adam"
+  weight_decay: 0.0
+  patience: 20
+  test_interval_epochs: 10
+  seed: 2023
+
+
+# [UNCERTAINTY] Remove this section to reproduce the results of the paper.
+uncertainty:
+  enabled: True
+  # Any subset of ["aleatoric", "epistemic", "support"].
+  components: ["aleatoric", "epistemic", "support"]
+  # Dropout in the prediction head, used for MC dropout at evaluation.
+  mc_dropout: 0.1
+  # MC dropout samples at evaluation.
+  num_mc_samples: 20
+  # Logit noise samples for the heteroscedastic likelihood in training.
+  num_noise_samples: 10
+  # Initial standard deviation of the logit noise.
+  init_logit_std: 0.1
+  # Prior weight W of the support uncertainty W / (W + n).
+  support_prior_weight: 2.0
+  # Candidate weights of each (standardized) uncertainty component, selected on validation AUC.
+  lambda_grid: [0.0, 0.01, 0.025, 0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2]
